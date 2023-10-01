@@ -11,6 +11,9 @@ PORT_APACHE := 8080
 PORT_RESTY := 8081
 PORT_FCGI := 8082
 PORT_UWSGI := 8083
+PORT_JLS := 8000
+
+LUAJLS := luajls
 
 export SOCKET_FCGI := /tmp/nginx-fcgi-benchmark.sock
 export SOCKET_UWSGI := /tmp/nginx-uwsgi-benchmark.sock
@@ -44,7 +47,7 @@ UWSGI_SOURCE := https://github.com/unbit/uwsgi.git
 $(shell mkdir -p nginx/logs apache/logs)
 
 all: summary
-start: nginx fcgi
+start: nginx fcgi start-jls
 stop: fcgi-stop uwsgi-stop nginx-stop apache-stop
 reload:
 	@touch nginx/conf/nginx.conf
@@ -52,7 +55,10 @@ reload:
 
 summary:
 	@$(MAKE) benchmark 1> >(egrep "^ab|Time taken|Benchmarking [^l]|^[ ]$$") 2> >(grep -v " requests")
-benchmarks benchmark: benchmark-resty benchmark-apache benchmark-fcgi
+
+benchmark: benchmark-resty benchmark-jls
+
+benchmarks: benchmark-resty benchmark-apache benchmark-fcgi
 	@$(MAKE) benchmark-uwsgi-lua5.1  --no-print-directory
 	@$(MAKE) benchmark-uwsgi-lua5.4  --no-print-directory
 	@$(MAKE) benchmark-uwsgi-luajit  --no-print-directory
@@ -77,6 +83,11 @@ benchmark-uwsgi-luajit: benchmark-uwsgi
 benchmark-uwsgi: test-uwsgi
 	@echo "Benchmarking $(PLUGIN_DIR)"
 	ab -k -c100 -n$(loops) -S "http://localhost:$(PORT_UWSGI)/$(REQUEST)"
+	@echo " "
+
+benchmark-jls: test-jls
+	@echo "Benchmarking LuaJLS"
+	ab -k -c100 -n$(loops) -S "http://localhost:$(PORT_JLS)/$(REQUEST)"
 	@echo " "
 
 test: test-resty test-apache test-fcgi
@@ -108,6 +119,11 @@ test-uwsgi: nginx uwsgi
 	curl -fsS "http://localhost:$(PORT_UWSGI)/$(REQUEST)"
 	@echo
 
+test-jls:
+	@echo Testing LuaJLS server
+	curl -fsS "http://localhost:$(PORT_JLS)/$(REQUEST)"
+	@echo
+
 nginx: nginx/logs/nginx.pid .reload
 	$(if $(IS_NGINX), , $(RUN_NGINX))
 nginx/logs/nginx.pid:
@@ -122,6 +138,9 @@ nginx/logs/nginx.pid:
 	@echo
 nginx-stop:
 	$(if $(IS_NGINX), $(STOP_NGINX))
+
+start-jls:
+	LUA_PATH="$(LUAJLS)/?.lua" LUA_CPATH="$(LUAJLS)/?.so" $(LUAJLS)/lua $(LUAJLS)/examples/webServer.lua -m www/jls-app.lua &
 
 apache: apache/logs/apache.pid .reload
 	$(if $(IS_APACHE), , $(RUN_APACHE))
